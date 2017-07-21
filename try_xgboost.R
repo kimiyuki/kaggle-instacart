@@ -38,6 +38,8 @@ require(Matrix)
 #X <- xgb.DMatrix(as.matrix(subtrain %>% select(-reordered)), label = subtrain$reordered)
 X <-  sparse.model.matrix(~., data = subtrain %>% select(-reordered))
 model <- xgboost(data = X, label= subtrain$reordered, params = params, nrounds = 60)
+subtrain$pred_reordered <- predict(model, X)
+write_csv(subtrain, paste0("test-results/subtrain", TODAY, ".csv"))
 
 importance <- xgb.importance(colnames(X), model = model)
 xgb.ggplot.importance(importance)
@@ -50,9 +52,9 @@ gc()
 
 # Apply model -------------------------------------------------------------
 #X <- xgb.DMatrix(as.matrix(test %>% select(-order_id, -product_id)))
-X1 <-  sparse.model.matrix(~., data = test %>% select(-order_id, -product_id))
-test$reordered <- predict(model, X1)
-write_csv(test, paste0("test-results/", TODAY, ".csv"))
+X <-  sparse.model.matrix(~., data = test %>% select(-order_id, -product_id))
+test$reordered <- predict(model, X)
+write_csv(test, paste0("test-results/test", TODAY, ".csv"))
 
 test$reordered <- (test$reordered > 0.21) * 1
 
