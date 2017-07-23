@@ -25,6 +25,5 @@ data$up_order_rate_since_first_order <-
 data <- data %>% 
   left_join(sales_train %>% select(user_id, product_id, reordered), 
             by = c("user_id", "product_id"))
-rm(sales_order, products, users, sales_train)
-gc()
+gc(sales_orders, products, users, sales_train, data)
 write_feather(data, "feather/data.feather")

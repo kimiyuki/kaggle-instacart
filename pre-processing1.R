@@ -94,8 +94,8 @@ users_train_test <- orders %>%
   mutate(
          last_order_dow = order_dow,
          last_order_hod = as.factor(as.numeric(order_hour_of_day) %% 8),
-         is_last_order_7ago = days_since_prior_order ==7,
-         is_last_order_Today = days_since_prior_order ==0)
+         is_last_order_7ago = as.numeric(days_since_prior_order ==7),
+         is_last_order_Today = as.numeric(days_since_prior_order ==0))
   
 users <- users %>% inner_join(users_train_test)
 
