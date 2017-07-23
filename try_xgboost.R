@@ -2,17 +2,8 @@ source("config.R")
 data = read_feather("feather/data.feather")
 # Train / Test datasets ---------------------------------------------------
 train <- as.data.frame(data[data$eval_set == "train",])
-train$eval_set <- NULL
-train$user_id <- NULL
-train$product_id <- NULL
-train$order_id <- NULL
-train$reordered[is.na(train$reordered)] <- 0
-
 test <- as.data.frame(data[data$eval_set == "test",])
-test$eval_set <- NULL
-test$user_id <- NULL
-test$reordered <- NULL
-
+train$reordered[is.na(train$reordered)] <- 0
 rm(data)
 gc()
 
@@ -32,23 +23,47 @@ params <- list(
   "alpha"               = 2e-05,
   "lambda"              = 10
 )
-
 subtrain <- train %>% sample_frac(0.1)
+subtrain1 <- train %>% sample_frac(0.1)
+subtrain2 <- train %>% sample_frac(0.1)
 require(Matrix)
-#X <- xgb.DMatrix(as.matrix(subtrain %>% select(-reordered)), label = subtrain$reordered)
-X <-  sparse.model.matrix(~., data = subtrain %>% select(-reordered))
-model <- xgboost(data = X, label= subtrain$reordered, params = params, nrounds = 60)
-subtrain$pred_reordered <- predict(model, X)
+
+## make model
+sp_mdl_mtrx = function (df){
+  sparse.model.matrix(
+    ~.,  data = df %>% select(-reordered, -eval_set, -user_id, -order_id, -product_id))}
+X <- sp_mdl_mtrx(subtrain) 
+model <- xgboost(data = X, label= subtrain$reordered, params = params, nrounds = 50)
+
+## evaluation... need to cross validation more properly?
+subtrain1$pred_reordered <- predict(model, sp_mdl_mtrx(subtrain1)) 
+print("subtrain1 for cv")
+print(LogLossBinary(subtrain1$reordered, subtrain1$pred_reordered))
+
+subtrain2$pred_reordered <- predict(model.top15, sp_mdl_mtrx(subtrain2)) 
+print("subtrain2 for cv")
+print(LogLossBinary(subtrain2$reordered, subtrain2$pred_reordered))
+
+## need record in every? time
 write_csv(subtrain, paste0("test-results/subtrain", TODAY, ".csv"))
 
+## evaluation
 importance <- xgb.importance(colnames(X), model = model)
-xgb.ggplot.importance(importance)
-ggsave(paste0('importances/plot', TODAY, ".png"))
+write_csv(importance, paste0("importances/importance-", TODAY, ".csv"))
+#xgb.ggplot.importance(importance)
+#ggsave(paste0('importances/plot', TODAY, ".png"))
 
 #TODO to get score for train data.
-rm(X, importance, subtrain)
+rm(X, importance, ls(pattern="subtrain"))
+xgb.save(model, paste0("xgbmodels/", TODAY, ".model"))
 gc()
 
+# tmp-------------
+top15.imp <- importance[1:15,"Feature"] %>% pull()
+X.top15 <- sparse.model.matrix(
+   ~., data =  subtrain %>% select(top15.imp))
+model.top15 <- xgboost(data = X.top15, label = subtrain$reordered,
+                       params = params, nrounds = 50)
 
 # Apply model -------------------------------------------------------------
 #X <- xgb.DMatrix(as.matrix(test %>% select(-order_id, -product_id)))
@@ -56,6 +71,7 @@ X <-  sparse.model.matrix(~., data = test %>% select(-order_id, -product_id))
 test$reordered <- predict(model, X)
 write_csv(test, paste0("test-results/test", TODAY, ".csv"))
 
+## I may need to top number N, whose N is sum(reordered), then apply it to theshold 0.21
 test$reordered <- (test$reordered > 0.21) * 1
 
 submission <- test %>%
