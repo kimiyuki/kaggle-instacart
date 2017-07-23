@@ -26,12 +26,12 @@ write_feather(products, "feather/products.feather")
 
 ## Sales with order info
 sales_orders <- orders %>% inner_join(sales_prior, by = "order_id")
-rm(sales_prior,orderp)
+rm(sales_prior, sales_train)
 gc()
 write_feather(sales_orders, "feather/sales_orders.feather")
 
 # Products ----------------------------------------------------------------
-prd <- sales_order %>%
+prd <- sales_orders %>%
   arrange(user_id, order_number, product_id) %>%
   group_by(user_id, product_id) %>%
   mutate(product_time = row_number()) %>% 
@@ -50,8 +50,6 @@ prd$prod_reorder_ratio <- prd$prod_reorders / prd$prod_orders
 
 prd <- prd %>% select(-prod_reorders, -prod_first_orders, -prod_second_orders)
 products <- prd %>% left_join(products)
-rm(products)
-gc()
 write_feather(products, "feather/products.feather")
 
 # Users -------------------------------------------------------------------
@@ -74,7 +72,7 @@ users_hod <- orders %>%
   group_by(user_id) %>% arrange(user_id, desc(n)) %>% filter(row_number() == 1) %>% 
   select(-n)
 
-users_product <- sales_order %>%
+users_product <- sales_orders %>%
   group_by(user_id) %>%
   summarise(
     user_total_products = n(),
