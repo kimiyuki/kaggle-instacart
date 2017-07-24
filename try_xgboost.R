@@ -23,7 +23,8 @@ params <- list(
   "alpha"               = 2e-05,
   "lambda"              = 10
 )
-subtrain <- train %>% sample_frac(0.1)
+subtrain <- train %>% sample_frac(0.1) #todo need to divede by user_id??ub
+subtrain <- train %>% fitler( )
 subtrain1 <- train %>% sample_frac(0.1)
 subtrain2 <- train %>% sample_frac(0.1)
 require(Matrix)
@@ -39,6 +40,7 @@ model <- xgboost(data = X, label= subtrain$reordered, params = params, nrounds =
 subtrain1$pred_reordered <- predict(model, sp_mdl_mtrx(subtrain1)) 
 print("subtrain1 for cv")
 print(LogLossBinary(subtrain1$reordered, subtrain1$pred_reordered))
+write_csv(subtrain1, paste0("test-results/subtrain", TODAY, ".csv"))
 
 subtrain2$pred_reordered <- predict(model.top15, sp_mdl_mtrx(subtrain2)) 
 print("subtrain2 for cv")

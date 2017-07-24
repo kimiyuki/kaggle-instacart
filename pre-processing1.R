@@ -10,19 +10,24 @@ aisles$aisle <- as.factor(aisles$aisle)
 departments$department <- as.factor(departments$department)
 orders$eval_set <- as.factor(orders$eval_set)
 orders$order_dow = as.factor(orders$order_dow)
+orders <- rename(orders,
+                 order_since = days_since_prior_order,
+                 order_hod  = order_hour_of_day)
+orders$order_hod = as.factor(as.numeric(orders$order_hod) %% 3)
 
 # train data ----------------
 sales_train %>% 
-  left_join(orders %>% select(order_id, user_id)) %>% 
+  left_join(orders %>% select(order_id, user_id, order_number,
+                              order_dow, order_hod, order_since)) %>% 
   write_feather("feather/sales_train.feather")
 
 # Products -----------------------------------------------------------
 products <- products %>% 
   inner_join(aisles) %>% inner_join(departments) %>% 
   select(-aisle_id, -department_id, -product_name)
+write_feather(products, "feather/products.feather")
 rm(aisles, departments)
 gc()
-write_feather(products, "feather/products.feather")
 
 ## Sales with order info
 sales_orders <- orders %>% inner_join(sales_prior, by = "order_id")
@@ -44,7 +49,7 @@ prd <- sales_orders %>%
     prod_second_orders = sum(product_time == 2)
   )
 
-prd$prod_reorder_probability <- prd$prod_second_orders / prd$prod_first_orders
+prd$prod_reorder_prob <- prd$prod_second_orders / prd$prod_first_orders
 prd$prod_reorder_times <- 1 + prd$prod_reorders / prd$prod_first_orders
 prd$prod_reorder_ratio <- prd$prod_reorders / prd$prod_orders
 
@@ -57,27 +62,27 @@ users_order <- orders %>%
   filter(eval_set == "prior") %>%
   group_by(user_id) %>%
   summarise(
-    user_orders = max(order_number),
-    user_period = sum(days_since_prior_order, na.rm = T),
-    user_mean_days_since_prior = mean(days_since_prior_order, na.rm = T)
+    user_orders  = max(order_number),
+    user_period = sum(order_since, na.rm = T),
+    user_since_mean = mean(order_since, na.rm = T)
   )
 
 users_dow <- orders %>% group_by(user_id, order_dow) %>% count() %>%
   group_by(user_id) %>% arrange(user_id, desc(n)) %>% filter(row_number() == 1) %>% 
-  select(-n) %>% rename(freq_order_dow = order_dow)
+  select(-n) %>% rename(user_freq_dow = order_dow)
 
 users_hod <- orders %>% 
-  mutate(freq_order_hod = as.factor(as.numeric(order_hour_of_day) %/% 8)) %>% 
-  group_by(user_id, freq_order_hod) %>% count() %>%
+  mutate(user_freq_hod = as.factor(as.numeric(order_hod) %/% 8)) %>% 
+  group_by(user_id, user_freq_hod) %>% count() %>%
   group_by(user_id) %>% arrange(user_id, desc(n)) %>% filter(row_number() == 1) %>% 
   select(-n)
 
 users_product <- sales_orders %>%
   group_by(user_id) %>%
   summarise(
-    user_total_products = n(),
+    user_total_prod = n(),
     user_reorder_ratio = sum(reordered == 1) / sum(order_number > 1),
-    user_distinct_products = n_distinct(product_id)
+    user_uniq_prod = n_distinct(product_id)
   )
 
 users <- users_order %>% 
@@ -85,15 +90,14 @@ users <- users_order %>%
   left_join(users_hod) %>% 
   left_join(users_product)
 
-users$user_average_basket <- users$user_total_products / users$user_orders
+users$user_average_basket <- users$user_total_prod / users$user_orders
 
 users_train_test <- orders %>%
   filter(eval_set != "prior") %>%
   mutate(
-         last_order_dow = order_dow,
-         last_order_hod = as.factor(as.numeric(order_hour_of_day) %% 8),
-         is_last_order_7ago = as.numeric(days_since_prior_order ==7),
-         is_last_order_Today = as.numeric(days_since_prior_order ==0))
+         order_dow = order_dow,
+         order_hod = order_hod,
+         order_since_is7ago = as.numeric(order_since ==7))
   
 users <- users %>% inner_join(users_train_test)
 
