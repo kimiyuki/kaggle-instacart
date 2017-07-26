@@ -67,15 +67,15 @@ users_order <- orders %>%
     user_since_mean = mean(order_since, na.rm = T)
   )
 
-users_dow <- orders %>% group_by(user_id, order_dow) %>% count() %>%
+users_dow <- orders %>% 
+  group_by(user_id, order_dow) %>% count() %>%
   group_by(user_id) %>% arrange(user_id, desc(n)) %>% filter(row_number() == 1) %>% 
   select(-n) %>% rename(user_freq_dow = order_dow)
 
 users_hod <- orders %>% 
-  mutate(user_freq_hod = as.factor(as.numeric(order_hod) %/% 8)) %>% 
-  group_by(user_id, user_freq_hod) %>% count() %>%
+  group_by(user_id, order_hod) %>% count() %>%
   group_by(user_id) %>% arrange(user_id, desc(n)) %>% filter(row_number() == 1) %>% 
-  select(-n)
+  select(-n) %>% rename(user_freq_hod = order_hod)
 
 users_product <- sales_orders %>%
   group_by(user_id) %>%

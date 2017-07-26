@@ -30,7 +30,4 @@ data <- data %>%
             by = c("user_id", "product_id"))
 rm(sales_orders, products, users, sales_train)
 write_feather(data, "feather/data.feather")
-rm(data)
-gc()
-
-
+rm(data, data0)
