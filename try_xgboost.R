@@ -23,31 +23,33 @@ params <- list(
   "alpha"               = 2e-05,
   "lambda"              = 10
 )
-subtrain <- train %>% sample_frac(0.1) #todo need to divede by user_id??ub
-subtrain <- train %>% fitler( )
-subtrain1 <- train %>% sample_frac(0.1)
-subtrain2 <- train %>% sample_frac(0.1)
+## 131,209 users. take 30,000, 30,000
+users_ids = train$user_id %>% unique() %>% sample(60000) 
+subtrain1 <- train %>% filter( user_id %in%  users_ids[1:30000])
+subtrain2 <- train %>% filter( user_id %in%  users_ids[30001:60000])
 require(Matrix)
 
 ## make model
 sp_mdl_mtrx = function (df){
   sparse.model.matrix(
-    ~.,  data = df %>% select(-reordered, -eval_set, -user_id, -order_id, -product_id))}
-X <- sp_mdl_mtrx(subtrain) 
-model <- xgboost(data = X, label= subtrain$reordered, params = params, nrounds = 50)
+    ~.,  
+    data = df %>% select(-reordered, -eval_set, -user_id, -order_id, -product_id) # %>% select_if(...) 
+  )}
+X <- sp_mdl_mtrx(subtrain1) 
+model <- xgboost(data = X, label= subtrain1$reordered, params = params, nrounds = 50)
 
 ## evaluation... need to cross validation more properly?
 subtrain1$pred_reordered <- predict(model, sp_mdl_mtrx(subtrain1)) 
 print("subtrain1 for cv")
 print(LogLossBinary(subtrain1$reordered, subtrain1$pred_reordered))
-write_csv(subtrain1, paste0("test-results/subtrain", TODAY, ".csv"))
+write_csv(subtrain1, paste0("test-results/subtrain1", TODAY, ".csv"))
 
-subtrain2$pred_reordered <- predict(model.top15, sp_mdl_mtrx(subtrain2)) 
+subtrain2$pred_reordered <- predict(model, sp_mdl_mtrx(subtrain2)) 
 print("subtrain2 for cv")
 print(LogLossBinary(subtrain2$reordered, subtrain2$pred_reordered))
+write_csv(subtrain2, paste0("test-results/subtrain2", TODAY, ".csv"))
 
 ## need record in every? time
-write_csv(subtrain, paste0("test-results/subtrain", TODAY, ".csv"))
 
 ## evaluation
 importance <- xgb.importance(colnames(X), model = model)
