@@ -1,14 +1,14 @@
 source("config.R")
 library(magrittr)
 gc()
-ret = read_csv(paste0('test-results/subtrain', TODAY, ".csv"))
+ret = read_csv(paste0('test-results/subtrain1', TODAY, ".csv"))
 
 
 ###get recall
-ret %<>% select(order_id,user_id, product_id, reordered, pred_reordered) 
+ret0 = ret %>% select(order_id,user_id, product_id, reordered, pred_reordered, order_number) 
 
 ##F1 score
-
+  
 ret1 <- ret %>% group_by(order_id) %>% nest()
 
   do(

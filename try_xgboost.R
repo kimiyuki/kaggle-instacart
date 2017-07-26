@@ -35,11 +35,11 @@ sp_mdl_mtrx = function (df){
     ~.,  
     data = df %>% select(-reordered, -eval_set, -user_id, -order_id, -product_id) # %>% select_if(...) 
   )}
-X <- sp_mdl_mtrx(subtrain1) 
+X <- sp_mdl_mtrx(subtrain1)
 model <- xgboost(data = X, label= subtrain1$reordered, params = params, nrounds = 50)
 
 ## evaluation... need to cross validation more properly?
-subtrain1$pred_reordered <- predict(model, sp_mdl_mtrx(subtrain1)) 
+subtrain1$pred_reordered <- predict(model, X)
 print("subtrain1 for cv")
 print(LogLossBinary(subtrain1$reordered, subtrain1$pred_reordered))
 write_csv(subtrain1, paste0("test-results/subtrain1", TODAY, ".csv"))
@@ -54,29 +54,31 @@ write_csv(subtrain2, paste0("test-results/subtrain2", TODAY, ".csv"))
 ## evaluation
 importance <- xgb.importance(colnames(X), model = model)
 write_csv(importance, paste0("importances/importance-", TODAY, ".csv"))
-#xgb.ggplot.importance(importance)
+importance = read_csv(paste0("importances/importance-", TODAY, ".csv"))
+xgb.ggplot.importance(importance %>% data.table())
 #ggsave(paste0('importances/plot', TODAY, ".png"))
 
 #TODO to get score for train data.
-rm(X, importance, ls(pattern="subtrain"))
+rm(X, importance, subtrain1, subtrain2)
 xgb.save(model, paste0("xgbmodels/", TODAY, ".model"))
 gc()
 
 # tmp-------------
 top15.imp <- importance[1:15,"Feature"] %>% pull()
 X.top15 <- sparse.model.matrix(
-   ~., data =  subtrain %>% select(top15.imp))
-model.top15 <- xgboost(data = X.top15, label = subtrain$reordered,
+   ~., data =  subtrain1 %>% select(top15.imp))
+model.top15 <- xgboost(data = X.top15, label = subtrain1$reordered,
                        params = params, nrounds = 50)
 
 # Apply model -------------------------------------------------------------
 #X <- xgb.DMatrix(as.matrix(test %>% select(-order_id, -product_id)))
-X <-  sparse.model.matrix(~., data = test %>% select(-order_id, -product_id))
+X <-  sp_mdl_mtrx(test)
 test$reordered <- predict(model, X)
 write_csv(test, paste0("test-results/test", TODAY, ".csv"))
 
 ## I may need to top number N, whose N is sum(reordered), then apply it to theshold 0.21
 test$reordered <- (test$reordered > 0.21) * 1
+test$reordered <- (test$reordered > 0.26) * 1 #worse....some than 0.21
 
 submission <- test %>%
   filter(reordered == 1) %>%
@@ -91,5 +93,5 @@ missing <- data.frame(
 )
 
 submission <- submission %>% bind_rows(missing) %>% arrange(order_id)
-write_csv(submission, path = paste0("submissions/", TODAY, ".csv"))
+write_csv(submission, path = paste0("submissions/", TODAY, "2.csv"))
 

@@ -1,8 +1,9 @@
 library(tidyverse)
 library(feather)
 library(multidplyr)
+library(data.table)
 TODAY = Sys.Date() %>% gsub("-","",.)
-DATAPATH = "data/"
+DATAPATH = "input/"
 
 LogLossBinary = function(actual, predicted, eps = 1e-15) {
   predicted = pmin(pmax(predicted, eps), 1-eps)
@@ -35,3 +36,4 @@ microbenchmark(
   cpp_med2(x),
   times = 20000
 )
+  
