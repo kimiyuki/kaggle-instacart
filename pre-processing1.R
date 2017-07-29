@@ -62,7 +62,7 @@ users_order <- orders %>%
   filter(eval_set == "prior") %>%
   group_by(user_id) %>%
   summarise(
-    user_orders  = max(order_number),
+    user_lastorder  = max(order_number),
     user_period = sum(order_since, na.rm = T),
     user_since_mean = mean(order_since, na.rm = T)
   )
