@@ -104,3 +104,4 @@ users <- users %>% inner_join(users_train_test)
 rm(users_order, users_dow, users_hod, users_train_test)
 gc()
 write_feather(users, "feather/users.feather")
+
