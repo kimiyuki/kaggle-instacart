@@ -1,15 +1,18 @@
 source("config.R")
 library(magrittr)
 gc()
-ret = read_csv(paste0('test-results/subtrain', TODAY, ".csv"))
+list.files("test-results/")
+DAY = "20170726"
+ret = read_csv(paste0('test-results/subtrain1', DAY, ".csv"))
+
 
 
 ###get recall
-ret %<>% select(order_id,user_id, product_id, reordered, pred_reordered) 
+ret0 = ret %>% select(order_id,user_id, product_id, reordered, pred_reordered, order_number) 
 
 ##F1 score
-
-ret1 <- ret %>% group_by(order_id) %>% nest()
+  
+ret1 <- ret0 %>% group_by(order_id) %>% nest()
 
   do(
     items = paste(product_id, collapse=","),

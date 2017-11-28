@@ -1,10 +1,10 @@
 source("config.R")
-aisles <- read_csv(file.path(DATAPATH, "aisles.csv"))
-departments <- read_csv(file.path(DATAPATH, "departments.csv"))
-sales_prior <- read_csv(file.path(DATAPATH, "order_products__prior.csv"))
-sales_train <- read_csv(file.path(DATAPATH, "order_products__train.csv"))
-orders <- read_csv(file.path(DATAPATH, "orders.csv"))
-products <- read_csv(file.path(DATAPATH, "products.csv"))
+aisles <- read_csv(file.path(DATAPATH, "aisles.csv.zip"))
+departments <- read_csv(file.path(DATAPATH, "departments.csv.zip"))
+sales_prior <- read_csv(file.path(DATAPATH, "order_products__prior.csv.zip"))
+sales_train <- read_csv(file.path(DATAPATH, "order_products__train.csv.zip"))
+orders <- read_csv(file.path(DATAPATH, "orders.csv.zip"))
+products <- read_csv(file.path(DATAPATH, "products.csv.zip"))
 
 aisles$aisle <- as.factor(aisles$aisle)
 departments$department <- as.factor(departments$department)
@@ -62,7 +62,7 @@ users_order <- orders %>%
   filter(eval_set == "prior") %>%
   group_by(user_id) %>%
   summarise(
-    user_orders  = max(order_number),
+    user_lastorder  = max(order_number),
     user_period = sum(order_since, na.rm = T),
     user_since_mean = mean(order_since, na.rm = T)
   )
@@ -101,6 +101,7 @@ users_train_test <- orders %>%
   
 users <- users %>% inner_join(users_train_test)
 
-rm(users_order, users_dow, users_hod, users_users_product, users_train_test)
+rm(users_order, users_dow, users_hod, users_train_test)
 gc()
 write_feather(users, "feather/users.feather")
+
