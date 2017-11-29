@@ -2,6 +2,9 @@ kaggle-instacart
 https://www.kaggle.com/c/instacart-market-basket-analysis
 =============================
 
+まとめ
+https://scrapbox.io/kimiyuki/Kaggle_-_Instacart
+---------------------------------------
 
 Objection
 --------------------------

@@ -1,9 +1,142 @@
-source("config.R")
-data = read_feather("feather/data.feather")
+###########################################################################################################
+#
+# Kaggle Instacart competition
+# Fabien Vavrand, June 2017
+# Simple xgboost starter, score 0.3791 on LB
+# Products selection is based on product by product binary classification, with a global threshold (0.21)
+#
+###########################################################################################################
+
+library(data.table)
+library(dplyr)
+library(tidyr)
+
+
+# Load Data ---------------------------------------------------------------
+path <- "data/"
+
+aisles <- fread(file.path(path, "aisles.csv"))
+departments <- fread(file.path(path, "departments.csv"))
+orderp <- fread(file.path(path, "order_products__prior.csv"))
+ordert <- fread(file.path(path, "order_products__train.csv"))
+orders <- fread(file.path(path, "orders.csv"))
+products <- fread(file.path(path, "products.csv"))
+
+
+# Reshape data ------------------------------------------------------------
+aisles$aisle <- as.factor(aisles$aisle)
+departments$department <- as.factor(departments$department)
+orders$eval_set <- as.factor(orders$eval_set)
+products$product_name <- as.factor(products$product_name)
+
+products <- products %>% 
+  inner_join(aisles) %>% inner_join(departments) %>% 
+  select(-aisle_id, -department_id)
+rm(aisles, departments)
+
+ordert$user_id <- orders$user_id[match(ordert$order_id, orders$order_id)]
+
+orders_products <- orders %>% inner_join(orderp, by = "order_id")
+
+rm(orderp)
+gc()
+
+
+# Products ----------------------------------------------------------------
+prd <- orders_products %>%
+  arrange(user_id, order_number, product_id) %>%
+  group_by(user_id, product_id) %>%
+  mutate(product_time = row_number()) %>%
+  ungroup() %>%
+  group_by(product_id) %>%
+  summarise(
+    prod_orders = n(),
+    prod_reorders = sum(reordered),
+    prod_first_orders = sum(product_time == 1),
+    prod_second_orders = sum(product_time == 2)
+  )
+
+prd$prod_reorder_probability <- prd$prod_second_orders / prd$prod_first_orders
+prd$prod_reorder_times <- 1 + prd$prod_reorders / prd$prod_first_orders
+prd$prod_reorder_ratio <- prd$prod_reorders / prd$prod_orders
+
+prd <- prd %>% select(-prod_reorders, -prod_first_orders, -prod_second_orders)
+
+rm(products)
+gc()
+
+# Users -------------------------------------------------------------------
+users <- orders %>%
+  filter(eval_set == "prior") %>%
+  group_by(user_id) %>%
+  summarise(
+    user_orders = max(order_number),
+    user_period = sum(days_since_prior_order, na.rm = T),
+    user_mean_days_since_prior = mean(days_since_prior_order, na.rm = T)
+  )
+
+us <- orders_products %>%
+  group_by(user_id) %>%
+  summarise(
+    user_total_products = n(),
+    user_reorder_ratio = sum(reordered == 1) / sum(order_number > 1),
+    user_distinct_products = n_distinct(product_id)
+  )
+
+users <- users %>% inner_join(us)
+users$user_average_basket <- users$user_total_products / users$user_orders
+
+us <- orders %>%
+  filter(eval_set != "prior") %>%
+  select(user_id, order_id, eval_set,
+         time_since_last_order = days_since_prior_order)
+
+users <- users %>% inner_join(us)
+
+rm(us)
+gc()
+
+
+# Database ----------------------------------------------------------------
+data <- orders_products %>%
+  group_by(user_id, product_id) %>% 
+  summarise(
+    up_orders = n(),
+    up_first_order = min(order_number),
+    up_last_order = max(order_number),
+    up_average_cart_position = mean(add_to_cart_order))
+
+rm(orders_products, orders)
+
+data <- data %>% 
+  inner_join(prd, by = "product_id") %>%
+  inner_join(users, by = "user_id")
+
+data$up_order_rate <- data$up_orders / data$user_orders
+data$up_orders_since_last_order <- data$user_orders - data$up_last_order
+data$up_order_rate_since_first_order <- data$up_orders / (data$user_orders - data$up_first_order + 1)
+
+data <- data %>% 
+  left_join(ordert %>% select(user_id, product_id, reordered), 
+            by = c("user_id", "product_id"))
+
+rm(ordert, prd, users)
+gc()
+
+
 # Train / Test datasets ---------------------------------------------------
 train <- as.data.frame(data[data$eval_set == "train",])
-test <- as.data.frame(data[data$eval_set == "test",])
+train$eval_set <- NULL
+train$user_id <- NULL
+train$product_id <- NULL
+train$order_id <- NULL
 train$reordered[is.na(train$reordered)] <- 0
+
+test <- as.data.frame(data[data$eval_set == "test",])
+test$eval_set <- NULL
+test$user_id <- NULL
+test$reordered <- NULL
+
 rm(data)
 gc()
 
@@ -12,7 +145,7 @@ gc()
 library(xgboost)
 
 params <- list(
-  "objective"         = "reg:logistic",
+  "objective"           = "reg:logistic",
   "eval_metric"         = "logloss",
   "eta"                 = 0.1,
   "max_depth"           = 6,
@@ -23,62 +156,23 @@ params <- list(
   "alpha"               = 2e-05,
   "lambda"              = 10
 )
-## 131,209 users. take 30,000, 30,000
-users_ids = train$user_id %>% unique() %>% sample(60000) 
-subtrain1 <- train %>% filter( user_id %in%  users_ids[1:30000])
-subtrain2 <- train %>% filter( user_id %in%  users_ids[30001:60000])
-require(Matrix)
 
-## make model
-sp_mdl_mtrx = function (df){
-  sparse.model.matrix(
-    ~.,  
-    data = df %>% select(-reordered, -eval_set, -user_id, -order_id, -product_id) # %>% select_if(...) 
-  )}
-X <- sp_mdl_mtrx(subtrain1)
-model <- xgboost(data = X, label= subtrain1$reordered, params = params, nrounds = 50)
+subtrain <- train %>% sample_frac(0.3)
+X <- xgb.DMatrix(as.matrix(subtrain %>% select(-reordered)), label = subtrain$reordered)
+model <- xgboost(data = X, params = params, nrounds = 80)
 
-## evaluation... need to cross validation more properly?
-subtrain1$pred_reordered <- predict(model, X)
-print("subtrain1 for cv")
-print(LogLossBinary(subtrain1$reordered, subtrain1$pred_reordered))
-write_csv(subtrain1, paste0("test-results/subtrain1", TODAY, ".csv"))
-
-subtrain2$pred_reordered <- predict(model, sp_mdl_mtrx(subtrain2)) 
-print("subtrain2 for cv")
-print(LogLossBinary(subtrain2$reordered, subtrain2$pred_reordered))
-write_csv(subtrain2, paste0("test-results/subtrain2", TODAY, ".csv"))
-
-## need record in every? time
-
-## evaluation
 importance <- xgb.importance(colnames(X), model = model)
-write_csv(importance, paste0("importances/importance-", TODAY, ".csv"))
-importance = read_csv(paste0("importances/importance-", TODAY, ".csv"))
-xgb.ggplot.importance(importance %>% data.table())
-#ggsave(paste0('importances/plot', TODAY, ".png"))
+xgb.ggplot.importance(importance)
 
-#TODO to get score for train data.
-rm(X, importance, subtrain1, subtrain2)
-xgb.save(model, paste0("xgbmodels/", TODAY, ".model"))
+rm(X, importance, subtrain)
 gc()
 
-# tmp-------------
-top15.imp <- importance[1:15,"Feature"] %>% pull()
-X.top15 <- sparse.model.matrix(
-   ~., data =  subtrain1 %>% select(top15.imp))
-model.top15 <- xgboost(data = X.top15, label = subtrain1$reordered,
-                       params = params, nrounds = 50)
 
 # Apply model -------------------------------------------------------------
-#X <- xgb.DMatrix(as.matrix(test %>% select(-order_id, -product_id)))
-X <-  sp_mdl_mtrx(test)
+X <- xgb.DMatrix(as.matrix(test %>% select(-order_id, -product_id)))
 test$reordered <- predict(model, X)
-write_csv(test, paste0("test-results/test", TODAY, ".csv"))
 
-## I may need to top number N, whose N is sum(reordered), then apply it to theshold 0.21
 test$reordered <- (test$reordered > 0.21) * 1
-test$reordered <- (test$reordered > 0.26) * 1 #worse....some than 0.21
 
 submission <- test %>%
   filter(reordered == 1) %>%
@@ -93,5 +187,5 @@ missing <- data.frame(
 )
 
 submission <- submission %>% bind_rows(missing) %>% arrange(order_id)
-write_csv(submission, path = paste0("submissions/", TODAY, "2.csv"))
+write.csv(submission, file = "submit.csv", row.names = F)
 
